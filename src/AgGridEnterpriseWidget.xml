@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<widget id="lowcodelabs.aggridenterprisewidget.AgGridEnterpriseWidget"
+        pluginWidget="true"
+        needsEntityContext="false"
+        offlineCapable="false"
+        supportedPlatform="Web"
+        xmlns="http://www.mendix.com/widget/1.0/"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.mendix.com/widget/1.0/ ../node_modules/mendix/custom_widget.xsd">
+
+    <name>Ag Grid Enterprise Widget</name>
+    <description>Enterprise-grade AG Grid widget with full Community features</description>
+    <icon/>
+
+    <properties>
+
+        <!-- DATA SOURCE -->
+        <propertyGroup caption="Data Source">
+            <property key="dataSource" type="datasource" required="true" isList="true">
+                <caption>Data Source</caption>
+                <description>Entity list to display in the grid</description>
+            </property>
+        </propertyGroup>
+
+        <!-- COLUMNS -->
+        <propertyGroup caption="Columns">
+            <property key="columns" type="object" isList="true" required="true">
+                <caption>Columns</caption>
+                <description>Define each column to display</description>
+                <properties>
+
+                    <propertyGroup caption="Data">
+                        <property key="columnAttribute" type="attribute" required="true" dataSource="../dataSource">
+                            <caption>Attribute</caption>
+                            <description>The entity attribute to show in this column</description>
+                            <attributeTypes>
+                                <attributeType name="String"/>
+                                <attributeType name="Integer"/>
+                                <attributeType name="Long"/>
+                                <attributeType name="Decimal"/>
+                                <attributeType name="Boolean"/>
+                                <attributeType name="DateTime"/>
+                                <attributeType name="AutoNumber"/>
+                                <attributeType name="Enum"/>
+                            </attributeTypes>
+                        </property>
+                        <property key="columnHeader" type="string" required="false">
+                            <caption>Header Label</caption>
+                            <description>Column header text (leave empty to use attribute name)</description>
+                        </property>
+                        <property key="columnType" type="enumeration" defaultValue="auto">
+                            <caption>Column Type</caption>
+                            <description>Data type for correct filter and editor</description>
+                            <enumerationValues>
+                                <enumerationValue key="auto">Auto Detect</enumerationValue>
+                                <enumerationValue key="text">Text</enumerationValue>
+                                <enumerationValue key="number">Number</enumerationValue>
+                                <enumerationValue key="boolean">Boolean</enumerationValue>
+                                <enumerationValue key="date">Date</enumerationValue>
+                            </enumerationValues>
+                        </property>
+                    </propertyGroup>
+
+                    <propertyGroup caption="Editing">
+                        <property key="columnEditable" type="boolean" defaultValue="true">
+                            <caption>Editable</caption>
+                            <description>Allow inline editing for this column</description>
+                        </property>
+                        <property key="columnRequired" type="boolean" defaultValue="false">
+                            <caption>Required</caption>
+                            <description>Empty values are rejected on edit</description>
+                        </property>
+                    </propertyGroup>
+
+                    <propertyGroup caption="Layout">
+                        <property key="columnWidth" type="integer" defaultValue="150">
+                            <caption>Width (px)</caption>
+                            <description>Initial column width in pixels</description>
+                        </property>
+                        <property key="columnMinWidth" type="integer" defaultValue="80">
+                            <caption>Min Width (px)</caption>
+                            <description>Minimum column width when resizing</description>
+                        </property>
+                        <property key="columnPinned" type="enumeration" defaultValue="none">
+                            <caption>Pin Column</caption>
+                            <description>Pin column to left or right</description>
+                            <enumerationValues>
+                                <enumerationValue key="none">None</enumerationValue>
+                                <enumerationValue key="left">Left</enumerationValue>
+                                <enumerationValue key="right">Right</enumerationValue>
+                            </enumerationValues>
+                        </property>
+                        <property key="columnHidden" type="boolean" defaultValue="false">
+                            <caption>Initially Hidden</caption>
+                            <description>Hide this column by default</description>
+                        </property>
+                        <property key="columnSortable" type="boolean" defaultValue="true">
+                            <caption>Sortable</caption>
+                            <description>Allow sorting on this column</description>
+                        </property>
+                        <property key="columnFilterable" type="boolean" defaultValue="true">
+                            <caption>Filterable</caption>
+                            <description>Allow filtering on this column</description>
+                        </property>
+                    </propertyGroup>
+
+                </properties>
+            </property>
+        </propertyGroup>
+
+        <!-- ACTIONS -->
+        <propertyGroup caption="Actions">
+            <property key="onSave" type="action" required="false">
+                <caption>On Save</caption>
+                <description>Microflow/nanoflow triggered on save</description>
+            </property>
+            <property key="onPageChange" type="action" required="false">
+                <caption>On Page Change</caption>
+                <description>Triggered when the user navigates to a different page</description>
+            </property>
+        </propertyGroup>
+
+        <!-- EDITING -->
+        <propertyGroup caption="Editing">
+            <property key="editable" type="boolean" defaultValue="true">
+                <caption>Enable Editing</caption>
+                <description>Allow cell editing globally</description>
+            </property>
+            <property key="saveMode" type="enumeration" defaultValue="manual">
+                <caption>Save Mode</caption>
+                <description>Auto: save on change. Manual: save on button click.</description>
+                <enumerationValues>
+                    <enumerationValue key="auto">Auto</enumerationValue>
+                    <enumerationValue key="manual">Manual</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="highlightDirtyRows" type="boolean" defaultValue="true">
+                <caption>Highlight Unsaved Rows</caption>
+                <description>Visually mark rows with unsaved changes</description>
+            </property>
+        </propertyGroup>
+
+        <!-- PAGINATION -->
+        <propertyGroup caption="Pagination">
+            <property key="enablePagination" type="boolean" defaultValue="true">
+                <caption>Enable Pagination</caption>
+                <description>Show pagination controls below the grid</description>
+            </property>
+            <property key="pageSize" type="integer" defaultValue="20">
+                <caption>Page Size</caption>
+                <description>Number of rows per page</description>
+            </property>
+            <property key="pageSizeSelector" type="boolean" defaultValue="true">
+                <caption>Show Page Size Selector</caption>
+                <description>Allow user to change page size</description>
+            </property>
+        </propertyGroup>
+
+        <!-- ROW SELECTION -->
+        <propertyGroup caption="Row Selection">
+            <property key="rowSelection" type="enumeration" defaultValue="none">
+                <caption>Row Selection Mode</caption>
+                <description>Allow single or multiple row selection</description>
+                <enumerationValues>
+                    <enumerationValue key="none">None</enumerationValue>
+                    <enumerationValue key="single">Single</enumerationValue>
+                    <enumerationValue key="multiple">Multiple (checkbox)</enumerationValue>
+                </enumerationValues>
+            </property>
+        </propertyGroup>
+
+        <!-- TOOLBAR -->
+        <propertyGroup caption="Toolbar">
+            <property key="showToolbar" type="boolean" defaultValue="true">
+                <caption>Show Toolbar</caption>
+                <description>Show the toolbar above the grid</description>
+            </property>
+            <property key="enableGlobalSearch" type="boolean" defaultValue="true">
+                <caption>Global Search</caption>
+                <description>Show quick filter search box</description>
+            </property>
+            <property key="enableCSVExport" type="boolean" defaultValue="true">
+                <caption>CSV Export Button</caption>
+                <description>Show CSV export button in toolbar</description>
+            </property>
+            <property key="enableColumnPanel" type="boolean" defaultValue="true">
+                <caption>Column Visibility Toggle</caption>
+                <description>Show column visibility panel button</description>
+            </property>
+            <property key="enableAutoSizeColumns" type="boolean" defaultValue="true">
+                <caption>Auto-Size Columns Button</caption>
+                <description>Show auto-size all columns button</description>
+            </property>
+            <property key="enableResetFilters" type="boolean" defaultValue="true">
+                <caption>Reset Filters Button</caption>
+                <description>Show reset all filters button</description>
+            </property>
+        </propertyGroup>
+
+        <!-- APPEARANCE -->
+        <propertyGroup caption="Appearance">
+            <property key="gridTheme" type="enumeration" defaultValue="alpine">
+                <caption>Grid Theme</caption>
+                <description>Visual theme for the grid</description>
+                <enumerationValues>
+                    <enumerationValue key="alpine">Alpine (Light)</enumerationValue>
+                    <enumerationValue key="alpine_dark">Alpine (Dark)</enumerationValue>
+                    <enumerationValue key="balham">Balham (Compact)</enumerationValue>
+                    <enumerationValue key="balham_dark">Balham Dark</enumerationValue>
+                    <enumerationValue key="material">Material</enumerationValue>
+                </enumerationValues>
+            </property>
+            <property key="gridHeight" type="integer" defaultValue="500">
+                <caption>Grid Height (px)</caption>
+                <description>Height of the grid area in pixels</description>
+            </property>
+            <property key="animateRows" type="boolean" defaultValue="true">
+                <caption>Animate Row Changes</caption>
+                <description>Animate row transitions on sort/filter</description>
+            </property>
+            <property key="stripedRows" type="boolean" defaultValue="false">
+                <caption>Striped Rows</caption>
+                <description>Alternate row background colors</description>
+            </property>
+        </propertyGroup>
+
+        <!-- GENERAL -->
+        <propertyGroup caption="General">
+            <systemProperty key="Name"/>
+            <systemProperty key="Visibility"/>
+            <systemProperty key="Editability"/>
+            <systemProperty key="TabIndex"/>
+        </propertyGroup>
+
+    </properties>
+</widget>
