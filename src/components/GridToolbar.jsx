@@ -2,33 +2,43 @@ import { createElement, useState, useCallback, useRef, useEffect } from "react";
 
 /**
  * GridToolbar
- * Custom toolbar — no AG Grid Enterprise modules used.
- * Column visibility is handled via a custom dropdown using
- * gridApi.setColumnsVisible() which is Community-compatible.
+ *
+ * Toolbar with: Search | Undo | Redo | Reset Filters | Auto-Size | Columns | Export CSV | Save
+ * Undo/Redo only shown when editable.
+ * All buttons togglable via template config.
+ *
+ * NOTE: No React fragments (<> </>) used — Mendix requires createElement compatibility.
  */
 export function GridToolbar({
     gridRef,
     saveAll,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     saveMode,
     hasDirtyRows,
-    showToolbar,
-    enableGlobalSearch,
-    enableCSVExport,
-    enableColumnPanel,
-    enableAutoSizeColumns,
-    enableResetFilters,
-    columnDefs = [],
+    // Feature toggles (from template or fallback)
+    showToolbar           = true,
+    enableGlobalSearch    = true,
+    enableCSVExport       = true,
+    enableColumnPanel     = true,
+    enableAutoSizeColumns = true,
+    enableResetFilters    = true,
+    editable              = true,
+    columnDefs            = [],
 }) {
-    const [searchValue, setSearchValue]       = useState("");
-    const [colPanelOpen, setColPanelOpen]     = useState(false);
-    const [hiddenCols, setHiddenCols]         = useState({});
-    const searchDebounce                      = useRef(null);
-    const colPanelRef                         = useRef(null);
+    const [searchValue,  setSearchValue]  = useState("");
+    const [colPanelOpen, setColPanelOpen] = useState(false);
+    const [hiddenCols,   setHiddenCols]   = useState({});
+    const [, forceRender] = useState(0);
+    const colPanelRef    = useRef(null);
+    const searchDebounce = useRef(null);
 
-    // Close column panel when clicking outside
+    // Close column panel on outside click
     useEffect(() => {
         if (!colPanelOpen) return;
-        const handler = (e) => {
+        const handler = e => {
             if (colPanelRef.current && !colPanelRef.current.contains(e.target)) {
                 setColPanelOpen(false);
             }
@@ -37,13 +47,34 @@ export function GridToolbar({
         return () => document.removeEventListener("mousedown", handler);
     }, [colPanelOpen]);
 
-    // ── Global Search ───────────────────────────────────────────
-    const handleSearchChange = useCallback((e) => {
-        const value = e.target.value;
-        setSearchValue(value);
+    // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
+    useEffect(() => {
+        if (!editable) return;
+        const handler = e => {
+            if (e.target.closest(".ag-cell-editor")) return;
+
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "z") {
+                e.preventDefault();
+                undo?.(gridRef.current?.api);
+                forceRender(r => r + 1);
+            }
+            if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
+                e.preventDefault();
+                redo?.(gridRef.current?.api);
+                forceRender(r => r + 1);
+            }
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [undo, redo, editable, gridRef]);
+
+    // ── Search ─────────────────────────────────────────────────────
+    const handleSearchChange = useCallback(e => {
+        const v = e.target.value;
+        setSearchValue(v);
         clearTimeout(searchDebounce.current);
         searchDebounce.current = setTimeout(() => {
-            gridRef.current?.api?.setGridOption("quickFilterText", value);
+            gridRef.current?.api?.setGridOption("quickFilterText", v);
         }, 250);
     }, [gridRef]);
 
@@ -52,25 +83,25 @@ export function GridToolbar({
         gridRef.current?.api?.setGridOption("quickFilterText", "");
     }, [gridRef]);
 
-    // ── CSV Export ──────────────────────────────────────────────
-    const handleExportCSV = useCallback(() => {
+    // ── Export ─────────────────────────────────────────────────────
+    const handleExport = useCallback(() => {
         gridRef.current?.api?.exportDataAsCsv({
             fileName: `export_${new Date().toISOString().slice(0, 10)}.csv`,
         });
     }, [gridRef]);
 
-    // ── Auto-size ───────────────────────────────────────────────
+    // ── Auto-size ──────────────────────────────────────────────────
     const handleAutoSize = useCallback(() => {
         gridRef.current?.api?.autoSizeAllColumns();
     }, [gridRef]);
 
-    // ── Reset Filters ───────────────────────────────────────────
+    // ── Reset filters ──────────────────────────────────────────────
     const handleResetFilters = useCallback(() => {
         gridRef.current?.api?.setFilterModel(null);
         clearSearch();
     }, [gridRef, clearSearch]);
 
-    // ── Column Visibility Toggle ────────────────────────────────
+    // ── Column visibility ──────────────────────────────────────────
     const toggleColumn = useCallback((field, visible) => {
         gridRef.current?.api?.setColumnsVisible([field], visible);
         setHiddenCols(prev => ({ ...prev, [field]: !visible }));
@@ -78,57 +109,66 @@ export function GridToolbar({
 
     if (!showToolbar) return null;
 
-    const dirty = hasDirtyRows?.();
-
-    // Only show toggleable columns (skip checkbox col)
-    const toggleableCols = columnDefs.filter(c => c.field && c.field !== "_checkbox");
+    const dirty      = hasDirtyRows?.();
+    const canUndoNow = editable && canUndo?.();
+    const canRedoNow = editable && canRedo?.();
+    const toggleableCols = columnDefs.filter(c => c.field && c.field !== "__checkbox__");
 
     return (
         <div style={styles.toolbar}>
-            {/* Left: Search */}
-            <div style={styles.left}>
-                {enableGlobalSearch && (
-                    <div style={styles.searchWrapper}>
-                        <span style={styles.searchIcon}>🔍</span>
-                        <input
-                            type="text"
-                            placeholder="Search all columns..."
-                            value={searchValue}
-                            onChange={handleSearchChange}
-                            style={styles.searchInput}
-                        />
-                        {searchValue && (
-                            <button onClick={clearSearch} style={styles.clearBtn}>✕</button>
-                        )}
-                    </div>
-                )}
-            </div>
 
-            {/* Right: Buttons */}
+            {/* LEFT: Search */}
+            {enableGlobalSearch && (
+                <div style={styles.searchWrapper}>
+                    <span style={styles.searchIcon}>🔍</span>
+                    <input
+                        type="text"
+                        placeholder="Search all columns..."
+                        value={searchValue}
+                        onChange={handleSearchChange}
+                        style={styles.searchInput}
+                    />
+                    {searchValue && (
+                        <button onClick={clearSearch} style={styles.clearBtn}>✕</button>
+                    )}
+                </div>
+            )}
+
+            {/* RIGHT: Action buttons */}
             <div style={styles.right}>
 
+                {/* Undo / Redo — wrapped in a div instead of a fragment */}
+                {editable && (
+                    <div style={styles.undoRedoGroup}>
+                        <Btn
+                            onClick={() => { undo?.(gridRef.current?.api); forceRender(r => r + 1); }}
+                            disabled={!canUndoNow}
+                            title="Undo last edit (Ctrl+Z)"
+                        >↩ Undo</Btn>
+                        <Btn
+                            onClick={() => { redo?.(gridRef.current?.api); forceRender(r => r + 1); }}
+                            disabled={!canRedoNow}
+                            title="Redo (Ctrl+Y)"
+                        >↪ Redo</Btn>
+                    </div>
+                )}
+
                 {enableResetFilters && (
-                    <Btn onClick={handleResetFilters} title="Reset all filters">
-                        🔄 Reset Filters
-                    </Btn>
+                    <Btn onClick={handleResetFilters} title="Reset all filters">🔄 Reset Filters</Btn>
                 )}
 
                 {enableAutoSizeColumns && (
-                    <Btn onClick={handleAutoSize} title="Auto-size all columns">
-                        ↔ Auto-Size
-                    </Btn>
+                    <Btn onClick={handleAutoSize} title="Auto-size columns">↔ Auto-Size</Btn>
                 )}
 
-                {/* Custom column visibility panel — no Enterprise required */}
+                {/* Column visibility panel */}
                 {enableColumnPanel && toggleableCols.length > 0 && (
                     <div style={{ position: "relative" }} ref={colPanelRef}>
                         <Btn
                             onClick={() => setColPanelOpen(p => !p)}
                             active={colPanelOpen}
                             title="Show/hide columns"
-                        >
-                            ☰ Columns
-                        </Btn>
+                        >☰ Columns</Btn>
                         {colPanelOpen && (
                             <div style={styles.dropdown}>
                                 <div style={styles.dropdownTitle}>Column Visibility</div>
@@ -152,9 +192,7 @@ export function GridToolbar({
                 )}
 
                 {enableCSVExport && (
-                    <Btn onClick={handleExportCSV} title="Export to CSV">
-                        ⬇ Export CSV
-                    </Btn>
+                    <Btn onClick={handleExport} title="Export to CSV">⬇ Export CSV</Btn>
                 )}
 
                 {saveMode === "manual" && (
@@ -171,11 +209,13 @@ export function GridToolbar({
     );
 }
 
-function Btn({ onClick, title, children, variant, active }) {
-    const isPrimary = variant === "primary";
-    const baseStyle = isPrimary ? styles.btnPrimary : active ? styles.btnActive : styles.btn;
+function Btn({ onClick, title, children, variant, active, disabled }) {
+    const s = disabled          ? styles.btnDisabled
+            : variant === "primary" ? styles.btnPrimary
+            : active            ? styles.btnActive
+            : styles.btn;
     return (
-        <button onClick={onClick} title={title} style={baseStyle}>
+        <button onClick={disabled ? undefined : onClick} title={title} style={s}>
             {children}
         </button>
     );
@@ -191,24 +231,25 @@ const styles = {
         padding: "8px 4px",
         marginBottom: 4,
     },
-    left: {
-        display: "flex",
-        alignItems: "center",
-        flex: 1,
-        minWidth: 200,
-    },
     right: {
         display: "flex",
         alignItems: "center",
         gap: 6,
         flexWrap: "wrap",
     },
+    // Wrapper for Undo + Redo pair — replaces the fragment
+    undoRedoGroup: {
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+    },
     searchWrapper: {
         position: "relative",
         display: "flex",
         alignItems: "center",
         flex: 1,
-        maxWidth: 320,
+        maxWidth: 300,
+        minWidth: 160,
     },
     searchIcon: {
         position: "absolute",
@@ -226,7 +267,7 @@ const styles = {
         borderRadius: 6,
         fontSize: 13,
         outline: "none",
-        backgroundColor: "#fff",
+        background: "#fff",
         color: "#374151",
         boxSizing: "border-box",
     },
@@ -270,6 +311,16 @@ const styles = {
         cursor: "pointer",
         whiteSpace: "nowrap",
         fontWeight: 600,
+    },
+    btnDisabled: {
+        padding: "5px 10px",
+        fontSize: 12,
+        border: "1px solid #e5e7eb",
+        borderRadius: 6,
+        background: "#f9fafb",
+        color: "#d1d5db",
+        cursor: "default",
+        whiteSpace: "nowrap",
     },
     dropdown: {
         position: "absolute",

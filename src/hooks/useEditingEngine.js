@@ -4,108 +4,231 @@ import { writeMendixAttribute } from "../services/mendixService";
 /**
  * useEditingEngine
  *
- * Handles all cell editing logic:
+ * Handles cell editing, undo/redo, and save.
  *
- * 1. Calls writeMendixAttribute() → setValue() writes new value onto the
- *    Mendix object IN MEMORY (object is dirty but not yet saved to DB)
+ * ─── EDITING FLOW ────────────────────────────────────────────────────────────
  *
- * 2. Stores a localOverride so the cell shows the new value immediately
- *    without blinking when Mendix triggers a datasource re-render
+ *   User edits cell
+ *       ↓
+ *   handleChange() stores new value in localOverrides ONLY
+ *       ↓
+ *   NO setValue called yet — Mendix doesn't know about this edit
+ *       ↓
+ *   Row turns yellow (dirty indicator)
+ *       ↓
+ *   AG Grid cell shows new value immediately (no blink, no Mendix re-render)
  *
- * 3. Marks the row dirty (yellow highlight) for manual save mode
+ * ─── SAVE FLOW (Manual mode) ─────────────────────────────────────────────────
  *
- * 4. On saveAll() → fires the onSave Mendix action (nanoflow/microflow)
- *    At this point the Mendix object already has the new values in memory,
- *    so the nanoflow only needs to COMMIT the object — nothing else.
+ *   User clicks Save
+ *       ↓
+ *   saveAll() loops every dirty row
+ *       ↓
+ *   writeMendixAttribute() → ev.setValue(newValue)   ← this is the ONLY write
+ *       ↓
+ *   onSave Mendix action fires
+ *       ↓
+ *   Mendix microflow (ACT_Save) runs → commits objects → saves to DB
+ *       ↓
+ *   dirty state cleared AFTER action fires
  *
- * REQUIREMENT: Use XPath datasource on your page, not Microflow datasource.
+ * ─── SAVE FLOW (Auto mode) ───────────────────────────────────────────────────
+ *
+ *   User leaves cell (onCellValueChanged fires)
+ *       ↓
+ *   handleChange() → writeMendixAttribute() immediately
+ *       ↓
+ *   onChange Mendix action fires
+ *       ↓
+ *   Mendix microflow commits that single object
+ *
+ * ─── UNDO / REDO ─────────────────────────────────────────────────────────────
+ *
+ *   Each edit is pushed onto historyStack.
+ *   Ctrl+Z  → undo last edit (restores localOverride + AG Grid cell to oldValue)
+ *   Ctrl+Y  → redo
+ *   Note: undo/redo only affects localOverrides — does NOT call setValue.
+ *   Values are only written to Mendix when the user saves.
  */
-export function useEditingEngine(dataSource, columns, saveAction, saveMode) {
+export function useEditingEngine(dataSource, columnMappings, parsedConfigs, saveAction, saveMode) {
 
+    // Set of mendixIds that have unsaved changes
     const dirtyRows      = useRef(new Set());
 
-    // localOverrides: { mendixId → { "col_0": newValue, "col_2": newValue } }
-    // Merged on top of rowData so cells don't blink back to old value
-    // when Mendix triggers a datasource refresh after setValue()
+    // Map of mendixId → { fieldKey: latestValue }
+    // Used to show the new value in the cell immediately without waiting for
+    // Mendix to re-render (prevents cell blinking)
     const localOverrides = useRef(new Map());
 
-    // Trigger re-render of toolbar when dirty state changes
-    const [, setDirtyTick] = useState(0);
+    // Tick counter — incrementing this forces rowData useMemo to re-run
+    // so localOverrides actually reach the AG Grid row data
+    const [dirtyTick, setDirtyTick] = useState(0);
 
+    // ── Undo / Redo history ───────────────────────────────────────────────────
+    // Each entry: { mendixId, field, oldValue, newValue }
+    const historyStack = useRef([]);
+    const historyIndex = useRef(-1);
+
+    // ── Handle cell change ────────────────────────────────────────────────────
     const handleChange = useCallback((params) => {
         const { data, colDef, newValue, oldValue, node, api } = params;
+
         const mendixId = data?._mendixId;
-        if (!mendixId) return;
+        const field    = colDef.field;   // ColumnKey string, e.g. "Name"
 
-        const colIndex = parseInt(colDef.field.replace("col_", ""), 10);
-        const col = columns[colIndex];
-        if (!col) return;
+        if (!mendixId || !field || field === "__checkbox__") return;
 
-        // ── Step 1: Store local override FIRST ───────────────────
-        // Do this before setValue so that even if setValue causes
-        // Mendix to re-render, the cell shows the new value, not the old one
-        const existing = localOverrides.current.get(mendixId) || {};
-        localOverrides.current.set(mendixId, {
-            ...existing,
-            [colDef.field]: newValue
-        });
-
-        // ── Step 2: Write to Mendix object in memory ──────────────
-        const item = dataSource?.items?.find(i => i.id === mendixId);
-        if (item) {
-            const success = writeMendixAttribute(item, col, newValue);
-            if (!success) {
-                // Revert local override and cell if write failed
-                localOverrides.current.delete(mendixId);
-                node.setDataValue(colDef.field, oldValue);
-                return;
-            }
-        }
-
-        // ── Step 3: Auto-save or mark dirty ──────────────────────
+        // ── AUTO SAVE MODE ─────────────────────────────────────────────────
+        // Write to Mendix immediately and fire the onChange action.
+        // No dirty tracking needed — Mendix handles commit via microflow.
         if (saveMode === "auto") {
-            if (saveAction?.canExecute) {
+            const item = dataSource?.items?.find(i => i.id === mendixId);
+            if (!item) return;
+
+            const success = writeMendixAttribute(item, field, newValue, columnMappings, parsedConfigs);
+
+            if (success && saveAction?.canExecute) {
                 saveAction.execute();
             }
-            // Clear override after auto-save trigger
-            localOverrides.current.delete(mendixId);
-        } else {
-            dirtyRows.current.add(mendixId);
-            setDirtyTick(t => t + 1); // re-render toolbar so Save button lights up
-            api.refreshCells({ rowNodes: [node], force: true });
-        }
-    }, [dataSource, columns, saveAction, saveMode]);
 
-    /**
-     * saveAll — fires onSave action.
-     *
-     * At this point, all edited Mendix objects already have their new values
-     * in memory (written by setValue in handleChange).
-     * The nanoflow wired to onSave just needs to COMMIT those objects.
-     *
-     * Simple nanoflow:
-     *   Start → Commit $currentObject (or retrieve list and commit all) → End
-     */
-    const saveAll = useCallback(() => {
-        if (saveAction?.canExecute) {
-            saveAction.execute();
-            dirtyRows.current.clear();
-            localOverrides.current.clear();
-            setDirtyTick(0);
+            // Still update localOverrides so the cell doesn't blink
+            // while Mendix re-renders after the action
+            const existing = localOverrides.current.get(mendixId) || {};
+            localOverrides.current.set(mendixId, { ...existing, [field]: newValue });
+            setDirtyTick(t => t + 1);
+            return;
         }
-    }, [saveAction]);
 
-    const hasDirtyRows = useCallback(
-        () => dirtyRows.current.size > 0,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        []
-    );
+        // ── MANUAL SAVE MODE ───────────────────────────────────────────────
+        // Store in localOverrides only — do NOT call setValue yet.
+        // The cell shows the new value immediately via localOverrides,
+        // but Mendix won't know about this edit until the user clicks Save.
+
+        const existing = localOverrides.current.get(mendixId) || {};
+        localOverrides.current.set(mendixId, { ...existing, [field]: newValue });
+
+        // Mark this row as dirty (yellow highlight)
+        dirtyRows.current.add(mendixId);
+
+        // Increment tick so rowData useMemo re-runs and picks up the override
+        setDirtyTick(t => t + 1);
+
+        // Refresh this row's cells in AG Grid
+        api?.refreshCells({ rowNodes: [node], force: true });
+
+        // ── Push onto undo history ─────────────────────────────────────────
+        // If user undid some steps and then made a new edit,
+        // truncate the forward history (same as VS Code / Word behaviour)
+        historyStack.current = historyStack.current.slice(0, historyIndex.current + 1);
+        historyStack.current.push({ mendixId, field, oldValue, newValue });
+        historyIndex.current = historyStack.current.length - 1;
+
+    }, [dataSource, columnMappings, parsedConfigs, saveAction, saveMode]);
+
+    // ── Undo ──────────────────────────────────────────────────────────────────
+    const undo = useCallback((gridApi) => {
+        if (historyIndex.current < 0) return;
+
+        const entry = historyStack.current[historyIndex.current];
+        historyIndex.current--;
+
+        const { mendixId, field, oldValue } = entry;
+
+        // Restore the localOverride to the old value
+        const existing = localOverrides.current.get(mendixId) || {};
+        localOverrides.current.set(mendixId, { ...existing, [field]: oldValue });
+
+        // If all fields for this row are now back to original, unmark as dirty
+        // (This is a basic check — for full accuracy you'd compare against original values)
+        const overrides = localOverrides.current.get(mendixId);
+        const allReverted = Object.values(overrides).every(v => v === null || v === undefined);
+        if (allReverted) {
+            dirtyRows.current.delete(mendixId);
+        }
+
+        setDirtyTick(t => t + 1);
+
+        // Update the AG Grid cell to show the reverted value
+        if (gridApi) {
+            gridApi.forEachNode(node => {
+                if (node.data?._mendixId === mendixId) {
+                    node.setDataValue(field, oldValue);
+                }
+            });
+        }
+    }, []);
+
+    // ── Redo ──────────────────────────────────────────────────────────────────
+    const redo = useCallback((gridApi) => {
+        if (historyIndex.current >= historyStack.current.length - 1) return;
+
+        historyIndex.current++;
+        const entry = historyStack.current[historyIndex.current];
+        const { mendixId, field, newValue } = entry;
+
+        const existing = localOverrides.current.get(mendixId) || {};
+        localOverrides.current.set(mendixId, { ...existing, [field]: newValue });
+
+        dirtyRows.current.add(mendixId);
+        setDirtyTick(t => t + 1);
+
+        if (gridApi) {
+            gridApi.forEachNode(node => {
+                if (node.data?._mendixId === mendixId) {
+                    node.setDataValue(field, newValue);
+                }
+            });
+        }
+    }, []);
+
+    // ── Save all dirty rows ───────────────────────────────────────────────────
+const saveAll = useCallback(() => {
+    if (dirtyRows.current.size === 0) return;
+
+    const dirtyIds = [...dirtyRows.current];
+
+    dirtyIds.forEach(mendixId => {
+        const item = dataSource?.items?.find(i => i.id === mendixId);
+        if (!item) return;
+
+        const overrides = localOverrides.current.get(mendixId) || {};
+
+        // Write all changed values into Mendix memory
+        Object.entries(overrides).forEach(([field, newValue]) => {
+            writeMendixAttribute(item, field, newValue, columnMappings, parsedConfigs);
+        });
+    });
+
+    // Fire microflow — it will commit
+    // Do NOT clear state here — datasource refresh will trigger the clear
+    if (saveAction?.canExecute) saveAction.execute();
+
+}, [dataSource, columnMappings, parsedConfigs, saveAction]);
+
+const clearAfterSave = useCallback(() => {
+    dirtyRows.current.clear();
+    localOverrides.current.clear();
+    historyStack.current = [];
+    historyIndex.current = -1;
+    setDirtyTick(0);
+}, []);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    const hasDirtyRows = useCallback(() => dirtyRows.current.size > 0, []);
+    const canUndo      = useCallback(() => historyIndex.current >= 0, []);
+    const canRedo      = useCallback(() => historyIndex.current < historyStack.current.length - 1, []);
 
     return {
         handleChange,
         saveAll,
+        clearAfterSave,
+        undo,
+        redo,
+        canUndo,
+        canRedo,
         dirtyRows,
         localOverrides,
         hasDirtyRows,
+        dirtyTick,      // ← expose this so GridContainer can add it as rowData dependency
     };
 }

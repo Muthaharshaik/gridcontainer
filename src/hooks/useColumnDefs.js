@@ -1,144 +1,158 @@
-import { useMemo } from "react";
+import { useMemo, createElement } from "react";
 
 /**
  * useColumnDefs
  *
- * Converts the Mendix widget "columns" property list into
- * AG Grid column definitions, including:
- *  - Correct cell editors per type (text, number, date, checkbox)
- *  - Correct column filters per type
- *  - Pinning, width, sortable, filterable, hidden
- *  - Checkbox column when row selection is "multiple"
+ * Converts parsedConfigs (from useColumnConfigs) into AG Grid columnDefs.
+ *
+ * KEY CHANGE: field is now the ColumnKey string (e.g. "Name", "Age")
+ * instead of positional "col_0", "col_1". This makes the data
+ * self-describing and independent of column order changes.
+ *
+ * @param parsedConfigs  - array from useColumnConfigs
+ * @param globalEditable - master editable switch from template/fallback
+ * @param rowSelection   - "none" | "single" | "multiple"
+ * @param enableFiltering - from template config
+ * @param enableColumnResize - from template config
  */
-export function useColumnDefs(columns, editable, rowSelection) {
+export function useColumnDefs(
+    parsedConfigs,
+    globalEditable,
+    rowSelection,
+    enableFiltering     = true,
+    enableColumnResize  = true
+) {
     return useMemo(() => {
-        if (!columns || columns.length === 0) return [];
+        if (!parsedConfigs || parsedConfigs.length === 0) return [];
 
-        const defs = columns.map((col, index) => {
-            const colType = col.columnType ?? "auto";
-            const isEditable = editable && (col.columnEditable ?? true);
+        const defs = parsedConfigs.map(cfg => {
+            const isEditable = globalEditable && cfg.isEditable;
 
             return {
-                field: `col_${index}`,
-                headerName: col.columnHeader || `Column ${index + 1}`,
-                editable: isEditable,
-                sortable: col.columnSortable ?? true,
-                filter: getFilter(colType, col.columnFilterable),
-                resizable: true,
-                width: col.columnWidth || 150,
-                minWidth: col.columnMinWidth || 80,
-                hide: col.columnHidden ?? false,
-                pinned: col.columnPinned !== "none" ? col.columnPinned : null,
-                cellEditor: getCellEditor(colType),
-                cellEditorParams: getCellEditorParams(colType),
-                cellRenderer: getCellRenderer(colType),
-                valueParser: getValueParser(colType),
-                filterParams: getFilterParams(colType),
-                // Tooltip shows full content for truncated cells
-                tooltipField: `col_${index}`,
-                // Used for CSV export header
-                headerTooltip: col.columnHeader || `Column ${index + 1}`,
+                // Use ColumnKey as field — meaningful and stable
+                field:      cfg.columnKey,
+                headerName: cfg.displayName || cfg.columnKey,
+
+                editable:   isEditable,
+                sortable:   true,
+                filter:     enableFiltering ? getFilter(cfg.dataType) : false,
+                resizable:  enableColumnResize,
+                width:      cfg.width || 150,
+                minWidth:   80,
+
+                cellEditor:       getCellEditor(cfg),
+                cellEditorParams: getCellEditorParams(cfg),
+                cellRenderer:     getCellRenderer(cfg.dataType),
+                valueParser:      getValueParser(cfg.dataType),
+                filterParams:     getFilterParams(cfg.dataType),
+
+                // Store config on the colDef so validation engine can access it
+                // without needing a separate lookup
+                _cfg: cfg,
+
+                tooltipField: cfg.columnKey,
             };
         });
 
-        // Prepend checkbox column if multiple selection enabled
+        // Checkbox column for multi-select
         if (rowSelection === "multiple") {
             defs.unshift({
                 headerCheckboxSelection: true,
-                checkboxSelection: true,
-                width: 50,
-                minWidth: 50,
-                maxWidth: 50,
-                pinned: "left",
-                resizable: false,
-                sortable: false,
-                filter: false,
-                editable: false,
-                field: "_checkbox",
-                headerName: "",
+                checkboxSelection:       true,
+                width:        50,
+                minWidth:     50,
+                maxWidth:     50,
+                pinned:       "left",
+                resizable:    false,
+                sortable:     false,
+                filter:       false,
+                editable:     false,
+                field:        "__checkbox__",
+                headerName:   "",
                 lockPosition: true,
                 suppressMovable: true,
             });
         }
 
         return defs;
-    }, [columns, editable, rowSelection]);
+    }, [parsedConfigs, globalEditable, rowSelection, enableFiltering, enableColumnResize]);
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────
 
-function getFilter(colType, filterable) {
-    if (filterable === false) return false;
-    switch (colType) {
-        case "number":    return "agNumberColumnFilter";
-        case "date":      return "agDateColumnFilter";
-        case "boolean":   return false; // Use column header checkbox instead
-        default:          return "agTextColumnFilter";
+function getFilter(dataType) {
+    switch (dataType) {
+        case "Number":   return "agNumberColumnFilter";
+        case "Date":     return "agDateColumnFilter";
+        case "Boolean":  return false;
+        default:         return "agTextColumnFilter";
     }
 }
 
-function getFilterParams(colType) {
-    if (colType === "text" || colType === "auto") {
+function getFilterParams(dataType) {
+    if (dataType === "Number") {
         return {
-            filterOptions: ["contains", "notContains", "startsWith", "endsWith", "equals", "notEqual"],
-            trimInput: true,
-            debounceMs: 300,
+            filterOptions: ["equals","notEqual","greaterThan","greaterThanOrEqual","lessThan","lessThanOrEqual","inRange"],
         };
     }
-    if (colType === "number") {
+    if (dataType === "Date") {
         return {
-            filterOptions: ["equals", "notEqual", "greaterThan", "greaterThanOrEqual", "lessThan", "lessThanOrEqual", "inRange"],
-        };
-    }
-    if (colType === "date") {
-        return {
-            filterOptions: ["equals", "greaterThan", "lessThan", "notEqual", "inRange"],
+            filterOptions: ["equals","greaterThan","lessThan","notEqual","inRange"],
             comparator: (filterDate, cellValue) => {
                 if (!cellValue) return -1;
-                const cellDate = cellValue instanceof Date ? cellValue : new Date(cellValue);
-                if (filterDate.getTime() === cellDate.getTime()) return 0;
-                return cellDate < filterDate ? -1 : 1;
+                const d = cellValue instanceof Date ? cellValue : new Date(cellValue);
+                if (filterDate.getTime() === d.getTime()) return 0;
+                return d < filterDate ? -1 : 1;
             },
         };
     }
-    return {};
+    return {
+        filterOptions: ["contains","notContains","startsWith","endsWith","equals","notEqual"],
+        trimInput: true,
+        debounceMs: 300,
+    };
 }
 
-function getCellEditor(colType) {
-    switch (colType) {
-        case "number":  return "agNumberCellEditor";
-        case "boolean": return "agCheckboxCellEditor";
-        case "date":    return "agDateStringCellEditor";
-        default:        return "agTextCellEditor";
+function getCellEditor(cfg) {
+    switch (cfg.dataType) {
+        case "Number":   return "agNumberCellEditor";
+        case "Boolean":  return "agCheckboxCellEditor";
+        case "Date":     return "agDateStringCellEditor";
+        case "Dropdown": return "agSelectCellEditor";
+        default:         return "agTextCellEditor";
     }
 }
 
-function getCellEditorParams(colType) {
-    if (colType === "number") {
+function getCellEditorParams(cfg) {
+    if (cfg.dataType === "Number") {
         return { precision: 2 };
     }
+    if (cfg.dataType === "Dropdown") {
+        // AG Grid agSelectCellEditor uses "values" array of strings
+        // We map { value, label } → just use label for display
+        // For proper value/label dropdown, a custom cellEditor would be needed
+        return {
+            values: cfg.dropdownOptions.map(o => o.label || o.value),
+        };
+    }
     return {};
 }
 
-function getCellRenderer(colType) {
-    switch (colType) {
-        case "boolean":  return "agCheckboxCellRenderer";
-        default:         return undefined;
-    }
+function getCellRenderer(dataType) {
+    if (dataType === "Boolean") return "agCheckboxCellRenderer";
+    return undefined;
 }
 
-function getValueParser(colType) {
-    switch (colType) {
-        case "number":
-            return params => {
-                const n = parseFloat(params.newValue);
-                return isNaN(n) ? params.oldValue : n;
+function getValueParser(dataType) {
+    switch (dataType) {
+        case "Number":
+            return p => {
+                const n = parseFloat(p.newValue);
+                return isNaN(n) ? p.oldValue : n;
             };
-        case "boolean":
-            return params => params.newValue === true || params.newValue === "true";
+        case "Boolean":
+            return p => p.newValue === true || p.newValue === "true";
         default:
-            return params => params.newValue;
+            return p => p.newValue;
     }
 }

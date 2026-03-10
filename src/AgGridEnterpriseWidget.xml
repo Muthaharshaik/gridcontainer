@@ -8,31 +8,44 @@
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.mendix.com/widget/1.0/ ../node_modules/mendix/custom_widget.xsd">
 
-    <name>Ag Grid Enterprise Widget</name>
-    <description>Enterprise-grade AG Grid widget with full Community features</description>
+    <name>Enterprise Spreadsheet Widget</name>
+    <description>Configuration-driven AG Grid spreadsheet widget. Admin defines structure via Mendix entities; users consume it.</description>
     <icon/>
 
     <properties>
 
-        <!-- DATA SOURCE -->
-        <propertyGroup caption="Data Source">
-            <property key="dataSource" type="datasource" required="true" isList="true">
-                <caption>Data Source</caption>
-                <description>Entity list to display in the grid</description>
+        <!-- ═══════════════════════════════════════════════════════
+             1. ROW DATA SOURCE
+             The actual entity whose records are shown as rows.
+             e.g. TestRecord, Employee, Invoice
+        ════════════════════════════════════════════════════════ -->
+        <propertyGroup caption="Row Data">
+            <property key="dataSource" type="datasource" isList="true" required="true">
+                <caption>Row Data Source</caption>
+                <description>The entity list to display as rows (e.g. TestRecord, Employee)</description>
             </property>
         </propertyGroup>
 
-        <!-- COLUMNS -->
-        <propertyGroup caption="Columns">
-            <property key="columns" type="object" isList="true" required="true">
-                <caption>Columns</caption>
-                <description>Define each column to display</description>
+        <!-- ═══════════════════════════════════════════════════════
+             2. COLUMN MAPPINGS
+             Developer maps each ColumnKey string to the actual
+             entity attribute. ColumnKey must match what Admin
+             sets in SpreadsheetColumnConfig.ColumnKey.
+             This is the ONLY developer configuration needed.
+        ════════════════════════════════════════════════════════ -->
+        <propertyGroup caption="Column Mappings">
+            <property key="columnMappings" type="object" isList="true" required="true">
+                <caption>Column Mappings</caption>
+                <description>Map each ColumnKey to its entity attribute. ColumnKey must match SpreadsheetColumnConfig.ColumnKey exactly.</description>
                 <properties>
-
-                    <propertyGroup caption="Data">
-                        <property key="columnAttribute" type="attribute" required="true" dataSource="../dataSource">
-                            <caption>Attribute</caption>
-                            <description>The entity attribute to show in this column</description>
+                    <propertyGroup caption="Mapping">
+                        <property key="mappingKey" type="string" required="true">
+                            <caption>Column Key</caption>
+                            <description>Must match ColumnKey in SpreadsheetColumnConfig (e.g. "Name", "Age")</description>
+                        </property>
+                        <property key="mappingAttribute" type="attribute" required="true" dataSource="../dataSource">
+                            <caption>Entity Attribute</caption>
+                            <description>The actual entity attribute this key maps to</description>
                             <attributeTypes>
                                 <attributeType name="String"/>
                                 <attributeType name="Integer"/>
@@ -44,164 +57,198 @@
                                 <attributeType name="Enum"/>
                             </attributeTypes>
                         </property>
-                        <property key="columnHeader" type="string" required="false">
-                            <caption>Header Label</caption>
-                            <description>Column header text (leave empty to use attribute name)</description>
-                        </property>
-                        <property key="columnType" type="enumeration" defaultValue="auto">
-                            <caption>Column Type</caption>
-                            <description>Data type for correct filter and editor</description>
-                            <enumerationValues>
-                                <enumerationValue key="auto">Auto Detect</enumerationValue>
-                                <enumerationValue key="text">Text</enumerationValue>
-                                <enumerationValue key="number">Number</enumerationValue>
-                                <enumerationValue key="boolean">Boolean</enumerationValue>
-                                <enumerationValue key="date">Date</enumerationValue>
-                            </enumerationValues>
-                        </property>
                     </propertyGroup>
-
-                    <propertyGroup caption="Editing">
-                        <property key="columnEditable" type="boolean" defaultValue="true">
-                            <caption>Editable</caption>
-                            <description>Allow inline editing for this column</description>
-                        </property>
-                        <property key="columnRequired" type="boolean" defaultValue="false">
-                            <caption>Required</caption>
-                            <description>Empty values are rejected on edit</description>
-                        </property>
-                    </propertyGroup>
-
-                    <propertyGroup caption="Layout">
-                        <property key="columnWidth" type="integer" defaultValue="150">
-                            <caption>Width (px)</caption>
-                            <description>Initial column width in pixels</description>
-                        </property>
-                        <property key="columnMinWidth" type="integer" defaultValue="80">
-                            <caption>Min Width (px)</caption>
-                            <description>Minimum column width when resizing</description>
-                        </property>
-                        <property key="columnPinned" type="enumeration" defaultValue="none">
-                            <caption>Pin Column</caption>
-                            <description>Pin column to left or right</description>
-                            <enumerationValues>
-                                <enumerationValue key="none">None</enumerationValue>
-                                <enumerationValue key="left">Left</enumerationValue>
-                                <enumerationValue key="right">Right</enumerationValue>
-                            </enumerationValues>
-                        </property>
-                        <property key="columnHidden" type="boolean" defaultValue="false">
-                            <caption>Initially Hidden</caption>
-                            <description>Hide this column by default</description>
-                        </property>
-                        <property key="columnSortable" type="boolean" defaultValue="true">
-                            <caption>Sortable</caption>
-                            <description>Allow sorting on this column</description>
-                        </property>
-                        <property key="columnFilterable" type="boolean" defaultValue="true">
-                            <caption>Filterable</caption>
-                            <description>Allow filtering on this column</description>
-                        </property>
-                    </propertyGroup>
-
                 </properties>
             </property>
         </propertyGroup>
 
-        <!-- ACTIONS -->
-        <propertyGroup caption="Actions">
-            <property key="onSave" type="action" required="false">
-                <caption>On Save</caption>
-                <description>Microflow/nanoflow triggered on save</description>
+        <!-- ═══════════════════════════════════════════════════════
+             3. TEMPLATE CONFIG SOURCE
+             Points to SpreadsheetTemplate entity.
+             Provides feature toggles (pagination, filtering, etc.)
+             Admin controls all these via the Mendix admin UI.
+        ════════════════════════════════════════════════════════ -->
+        <propertyGroup caption="Template Config">
+            <property key="templateSource" type="datasource" isList="true" required="false">
+                <caption>Template Source</caption>
+                <description>SpreadsheetTemplate datasource (single active template)</description>
             </property>
-            <property key="onPageChange" type="action" required="false">
-                <caption>On Page Change</caption>
-                <description>Triggered when the user navigates to a different page</description>
+            <property key="tmplEnablePagination" type="attribute" dataSource="templateSource" required="false">
+                <caption>Enable Pagination (attribute)</caption>
+                <description>Map to SpreadsheetTemplate.EnablePagination</description>
+                <attributeTypes><attributeType name="Boolean"/></attributeTypes>
+            </property>
+            <property key="tmplPageSize" type="attribute" dataSource="templateSource" required="false">
+                <caption>Page Size (attribute)</caption>
+                <description>Map to SpreadsheetTemplate.PageSize</description>
+                <attributeTypes><attributeType name="Integer"/><attributeType name="Long"/></attributeTypes>
+            </property>
+            <property key="tmplEnableFiltering" type="attribute" dataSource="templateSource" required="false">
+                <caption>Enable Filtering (attribute)</caption>
+                <description>Map to SpreadsheetTemplate.EnableFiltering</description>
+                <attributeTypes><attributeType name="Boolean"/></attributeTypes>
+            </property>
+            <property key="tmplEnableCSVExport" type="attribute" dataSource="templateSource" required="false">
+                <caption>Enable CSV Export (attribute)</caption>
+                <description>Map to SpreadsheetTemplate.EnableCSVExport</description>
+                <attributeTypes><attributeType name="Boolean"/></attributeTypes>
+            </property>
+            <property key="tmplEnableColumnResize" type="attribute" dataSource="templateSource" required="false">
+                <caption>Enable Column Resize (attribute)</caption>
+                <description>Map to SpreadsheetTemplate.EnableColumnResize</description>
+                <attributeTypes><attributeType name="Boolean"/></attributeTypes>
             </property>
         </propertyGroup>
 
-        <!-- EDITING -->
-        <propertyGroup caption="Editing">
-            <property key="editable" type="boolean" defaultValue="true">
-                <caption>Enable Editing</caption>
-                <description>Allow cell editing globally</description>
+        <!-- ═══════════════════════════════════════════════════════
+             4. COLUMN CONFIG SOURCE
+             Points to SpreadsheetColumnConfig entity list.
+             Admin defines each column: key, label, type, editable,
+             required, width, validation regex, default value.
+        ════════════════════════════════════════════════════════ -->
+        <propertyGroup caption="Column Config Source">
+            <property key="columnConfigSource" type="datasource" isList="true" required="false">
+                <caption>Column Config Source</caption>
+                <description>SpreadsheetColumnConfig list (sorted by OrderIndex)</description>
             </property>
-            <property key="saveMode" type="enumeration" defaultValue="manual">
+            <property key="cfgColumnKey" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>ColumnKey (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.ColumnKey</description>
+                <attributeTypes><attributeType name="String"/></attributeTypes>
+            </property>
+            <property key="cfgDisplayName" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>DisplayName (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.DisplayName</description>
+                <attributeTypes><attributeType name="String"/></attributeTypes>
+            </property>
+            <property key="cfgDataType" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>DataType (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.DataType (Text/Number/Date/Boolean/Dropdown)</description>
+                <attributeTypes><attributeType name="Enum"/><attributeType name="String"/></attributeTypes>
+            </property>
+            <property key="cfgOrderIndex" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>OrderIndex (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.OrderIndex</description>
+                <attributeTypes><attributeType name="Integer"/><attributeType name="Long"/></attributeTypes>
+            </property>
+            <property key="cfgIsEditable" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>IsEditable (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.IsEditable</description>
+                <attributeTypes><attributeType name="Boolean"/></attributeTypes>
+            </property>
+            <property key="cfgIsRequired" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>IsRequired (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.IsRequired</description>
+                <attributeTypes><attributeType name="Boolean"/></attributeTypes>
+            </property>
+            <property key="cfgWidth" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>Width (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.Width</description>
+                <attributeTypes><attributeType name="Integer"/><attributeType name="Long"/></attributeTypes>
+            </property>
+            <property key="cfgValidationRegex" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>ValidationRegex (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.ValidationRegex</description>
+                <attributeTypes><attributeType name="String"/></attributeTypes>
+            </property>
+            <property key="cfgDefaultValue" type="attribute" dataSource="columnConfigSource" required="false">
+                <caption>DefaultValue (attribute)</caption>
+                <description>Map to SpreadsheetColumnConfig.DefaultValue</description>
+                <attributeTypes><attributeType name="String"/></attributeTypes>
+            </property>
+        </propertyGroup>
+
+        <!-- ═══════════════════════════════════════════════════════
+             5. DROPDOWN OPTIONS SOURCE
+             Points to DropdownOption entity list.
+             Used for columns with DataType = Dropdown.
+        ════════════════════════════════════════════════════════ -->
+        <propertyGroup caption="Dropdown Options">
+            <property key="dropdownOptionSource" type="datasource" isList="true" required="false">
+                <caption>Dropdown Option Source</caption>
+                <description>DropdownOption list (all options for all columns)</description>
+            </property>
+            <property key="doptColumnKey" type="attribute" dataSource="dropdownOptionSource" required="false">
+                <caption>ColumnKey (attribute)</caption>
+                <description>Map to DropdownOption.ColumnKey (matches SpreadsheetColumnConfig.ColumnKey)</description>
+                <attributeTypes><attributeType name="String"/></attributeTypes>
+            </property>
+            <property key="doptValue" type="attribute" dataSource="dropdownOptionSource" required="false">
+                <caption>Option Value (attribute)</caption>
+                <description>Map to DropdownOption.OptionValue (stored value)</description>
+                <attributeTypes><attributeType name="String"/></attributeTypes>
+            </property>
+            <property key="doptLabel" type="attribute" dataSource="dropdownOptionSource" required="false">
+                <caption>Option Label (attribute)</caption>
+                <description>Map to DropdownOption.OptionLabel (displayed text)</description>
+                <attributeTypes><attributeType name="String"/></attributeTypes>
+            </property>
+        </propertyGroup>
+
+        <!-- ═══════════════════════════════════════════════════════
+             6. ACTIONS
+        ════════════════════════════════════════════════════════ -->
+        <propertyGroup caption="Actions">
+            <property key="onSave" type="action" required="false">
+                <caption>On Save</caption>
+                <description>Fired after all dirty rows are committed to Mendix DB. Use for refresh / notifications.</description>
+            </property>
+            <property key="onPageChange" type="action" required="false">
+                <caption>On Page Change</caption>
+                <description>Fired when user navigates to a different page</description>
+            </property>
+        </propertyGroup>
+
+        <!-- ═══════════════════════════════════════════════════════
+             7. FALLBACK SETTINGS
+             Used when templateSource is not configured.
+             These are overridden by the template if one is set.
+        ════════════════════════════════════════════════════════ -->
+        <propertyGroup caption="Fallback Settings">
+            <property key="fallbackEditable" type="boolean" defaultValue="true">
+                <caption>Enable Editing</caption>
+                <description>Fallback when no template configured</description>
+            </property>
+            <property key="fallbackSaveMode" type="enumeration" defaultValue="manual">
                 <caption>Save Mode</caption>
-                <description>Auto: save on change. Manual: save on button click.</description>
+                <description>Manual: user clicks Save. Auto: saves on every cell change.</description>
                 <enumerationValues>
                     <enumerationValue key="auto">Auto</enumerationValue>
                     <enumerationValue key="manual">Manual</enumerationValue>
                 </enumerationValues>
             </property>
-            <property key="highlightDirtyRows" type="boolean" defaultValue="true">
-                <caption>Highlight Unsaved Rows</caption>
-                <description>Visually mark rows with unsaved changes</description>
-            </property>
-        </propertyGroup>
-
-        <!-- PAGINATION -->
-        <propertyGroup caption="Pagination">
-            <property key="enablePagination" type="boolean" defaultValue="true">
+            <property key="fallbackPagination" type="boolean" defaultValue="true">
                 <caption>Enable Pagination</caption>
-                <description>Show pagination controls below the grid</description>
+                <description>Fallback when no template configured</description>
             </property>
-            <property key="pageSize" type="integer" defaultValue="20">
+            <property key="fallbackPageSize" type="integer" defaultValue="20">
                 <caption>Page Size</caption>
-                <description>Number of rows per page</description>
+                <description>Fallback when no template configured</description>
             </property>
-            <property key="pageSizeSelector" type="boolean" defaultValue="true">
-                <caption>Show Page Size Selector</caption>
-                <description>Allow user to change page size</description>
+            <property key="fallbackCSVExport" type="boolean" defaultValue="true">
+                <caption>Enable CSV Export</caption>
+                <description>Fallback when no template configured</description>
             </property>
-        </propertyGroup>
-
-        <!-- ROW SELECTION -->
-        <propertyGroup caption="Row Selection">
             <property key="rowSelection" type="enumeration" defaultValue="none">
                 <caption>Row Selection Mode</caption>
-                <description>Allow single or multiple row selection</description>
+                <description>None / Single / Multiple (checkbox)</description>
                 <enumerationValues>
                     <enumerationValue key="none">None</enumerationValue>
                     <enumerationValue key="single">Single</enumerationValue>
                     <enumerationValue key="multiple">Multiple (checkbox)</enumerationValue>
                 </enumerationValues>
             </property>
-        </propertyGroup>
-
-        <!-- TOOLBAR -->
-        <propertyGroup caption="Toolbar">
-            <property key="showToolbar" type="boolean" defaultValue="true">
-                <caption>Show Toolbar</caption>
-                <description>Show the toolbar above the grid</description>
+            <property key="highlightDirtyRows" type="boolean" defaultValue="true">
+                <caption>Highlight Unsaved Rows</caption>
+                <description>Yellow highlight on rows with unsaved changes</description>
             </property>
-            <property key="enableGlobalSearch" type="boolean" defaultValue="true">
-                <caption>Global Search</caption>
-                <description>Show quick filter search box</description>
+            <property key="gridHeight" type="integer" defaultValue="500">
+                <caption>Grid Height (px)</caption>
+                <description>Height of the grid area</description>
             </property>
-            <property key="enableCSVExport" type="boolean" defaultValue="true">
-                <caption>CSV Export Button</caption>
-                <description>Show CSV export button in toolbar</description>
-            </property>
-            <property key="enableColumnPanel" type="boolean" defaultValue="true">
-                <caption>Column Visibility Toggle</caption>
-                <description>Show column visibility panel button</description>
-            </property>
-            <property key="enableAutoSizeColumns" type="boolean" defaultValue="true">
-                <caption>Auto-Size Columns Button</caption>
-                <description>Show auto-size all columns button</description>
-            </property>
-            <property key="enableResetFilters" type="boolean" defaultValue="true">
-                <caption>Reset Filters Button</caption>
-                <description>Show reset all filters button</description>
-            </property>
-        </propertyGroup>
-
-        <!-- APPEARANCE -->
-        <propertyGroup caption="Appearance">
             <property key="gridTheme" type="enumeration" defaultValue="alpine">
                 <caption>Grid Theme</caption>
-                <description>Visual theme for the grid</description>
+                <description>Visual theme</description>
                 <enumerationValues>
                     <enumerationValue key="alpine">Alpine (Light)</enumerationValue>
                     <enumerationValue key="alpine_dark">Alpine (Dark)</enumerationValue>
@@ -210,25 +257,12 @@
                     <enumerationValue key="material">Material</enumerationValue>
                 </enumerationValues>
             </property>
-            <property key="gridHeight" type="integer" defaultValue="500">
-                <caption>Grid Height (px)</caption>
-                <description>Height of the grid area in pixels</description>
-            </property>
-            <property key="animateRows" type="boolean" defaultValue="true">
-                <caption>Animate Row Changes</caption>
-                <description>Animate row transitions on sort/filter</description>
-            </property>
-            <property key="stripedRows" type="boolean" defaultValue="false">
-                <caption>Striped Rows</caption>
-                <description>Alternate row background colors</description>
-            </property>
         </propertyGroup>
 
-        <!-- GENERAL -->
+        <!-- SYSTEM -->
         <propertyGroup caption="General">
             <systemProperty key="Name"/>
             <systemProperty key="Visibility"/>
-            <systemProperty key="Editability"/>
             <systemProperty key="TabIndex"/>
         </propertyGroup>
 
